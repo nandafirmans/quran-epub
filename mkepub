@@ -224,7 +224,7 @@ if [[ -z ${TRANS} ]]; then
         for (v = 1; v <= max_verse[s]; v++) {
           key = s FS v
           if (key in verses) {
-            print "## " verses[key]
+            print verses[key]  # Print Arabic text without HEADERH2
             if (key in indo) print indo[key]
             if (key in munt) print munt[key]
             if (key in jala) print jala[key]
@@ -266,7 +266,7 @@ else
         for (v = 1; v <= max_verse[s]; v++) {
           key = s FS v
           if (key in verses) {
-            print "## " verses[key]
+            print verses[key]  # Print Arabic text without HEADERH2
             if (key in trans) print trans[key]
             print ""
           }
@@ -282,6 +282,8 @@ print_msg 'Memilah hasil penggabungan berdasar nomor surat'
 
 # Process each surah
 current_surah=0
+last_verse_counter=0  # Initialize the counter
+
 while IFS= read -r line; do
   if [[ $line =~ ^#[^#] ]]; then
     # This is a surah marker line
@@ -289,12 +291,20 @@ while IFS= read -r line; do
     # Add surah name
     printf '%s\n\n' "# ${NAMA_SURAT[$current_surah]}" '-----' >> "$QMD"
     verse_counter=1
-  elif [[ $line =~ ^##[[:space:]] ]]; then
-    # This is a verse line
-    printf '%d. %s\n' "$verse_counter" "$line" >> "$QMD"
-    ((verse_counter++))
+    last_verse_counter=0  # Reset counter for new surah
+  elif [[ $line =~ ^[^#] ]] && [[ -n $line ]]; then
+    # This is either an Arabic verse or translation
+    if [[ $verse_counter -eq $(($last_verse_counter + 1)) ]]; then
+      # This is an Arabic verse, add number and formatting
+      printf '%d. ## %s\n' "$verse_counter" "$line" >> "$QMD"
+      last_verse_counter=$verse_counter
+      ((verse_counter++))
+    else
+      # This is a translation, print as is
+      echo "$line" >> "$QMD"
+    fi
   else
-    # This is a translation or empty line
+    # This is an empty line
     echo "$line" >> "$QMD"
   fi
 done < "$MQ"
