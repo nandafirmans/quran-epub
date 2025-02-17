@@ -184,7 +184,7 @@ MQ="$TMPDIR/merged-${QURAN}"
 QEPUB="$SCRIPTDIR/quran.epub"
 
 # Convert Qur'an text to include header markers
-awk -F'|' '{print $1"|"$2"|HEADERH2"$3}' "src/quran/$QURAN" > "$TMPDIR/$QURAN"
+cp "src/quran/$QURAN" "$TMPDIR/$QURAN"
 
 print_msg "Menggabungkan teks $QURAN dengan terjemahnya"
 if [[ -z ${TRANS} ]]; then
@@ -224,7 +224,7 @@ if [[ -z ${TRANS} ]]; then
         for (v = 1; v <= max_verse[s]; v++) {
           key = s FS v
           if (key in verses) {
-            print verses[key]  # Print Arabic text without HEADERH2
+            print "## " verses[key]  # Add ## directly here
             if (key in indo) print indo[key]
             if (key in munt) print munt[key]
             if (key in jala) print jala[key]
@@ -266,7 +266,7 @@ else
         for (v = 1; v <= max_verse[s]; v++) {
           key = s FS v
           if (key in verses) {
-            print verses[key]  # Print Arabic text without HEADERH2
+            print "## " verses[key]  # Add ## directly here
             if (key in trans) print trans[key]
             print ""
           }
@@ -292,24 +292,28 @@ while IFS= read -r line; do
     printf '%s\n\n' "# ${NAMA_SURAT[$current_surah]}" '-----' >> "$QMD"
     verse_counter=1
     last_verse_counter=0  # Reset counter for new surah
-  elif [[ $line =~ ^[^#] ]] && [[ -n $line ]]; then
-    # This is either an Arabic verse or translation
-    if [[ $verse_counter -eq $(($last_verse_counter + 1)) ]]; then
-      # This is an Arabic verse, add number and formatting
-      printf '%d. ## %s\n' "$verse_counter" "$line" >> "$QMD"
-      last_verse_counter=$verse_counter
-      ((verse_counter++))
-    else
-      # This is a translation, print as is
-      echo "$line" >> "$QMD"
-    fi
+  elif [[ $line =~ ^##[[:space:]] ]]; then
+    # This is an Arabic verse, add number and formatting
+    printf '%d. %s\n' "$verse_counter" "$line" >> "$QMD"
+    last_verse_counter=$verse_counter
+    ((verse_counter++))
+  elif [[ -n $line ]]; then
+    # This is a translation, print as is
+    echo "$line" >> "$QMD"
   else
     # This is an empty line
     echo "$line" >> "$QMD"
   fi
 done < "$MQ"
 
-# Escape backticks using sed instead of awk
+# Remove the duplicate processing section
+# DELETE this entire section as it's no longer needed:
+# for i in {1..114}; do
+#   printf '%s\n\n' "# ${NAMA_SURAT[$i]}" '-----' >> "$QMD"
+#   awk -F'|' -v num="^${i}[|][[:alnum:]]" \
+#     '$0 ~ num {gsub("HEADERH2", "## "); print $2". "$3"\n"}' "$MQ" >> "$QMD"
+
+# done# Escape backticks using sed instead of awk
 sed 's/`/\\`/g' "$MQ" > "$MQ.tmp" && mv "$MQ.tmp" "$MQ"
 
 print_msg 'Memilah hasil penggabungan berdasar nomor surat'
