@@ -316,16 +316,6 @@ done < "$MQ"
 # done# Escape backticks using sed instead of awk
 sed 's/`/\\`/g' "$MQ" > "$MQ.tmp" && mv "$MQ.tmp" "$MQ"
 
-print_msg 'Memilah hasil penggabungan berdasar nomor surat'
-for i in {1..114}; do
-  # Add surah name
-  printf '%s\n\n' "# ${NAMA_SURAT[$i]}" '-----' >> "$QMD"
-
-  # Extract verses by number and format them
-  awk -F'|' -v num="^${i}[|][[:alnum:]]" \
-    '$0 ~ num {gsub("HEADERH2", "## "); print $2". "$3"\n"}' "$MQ" >> "$QMD"
-done
-
 print_msg 'Menyalin quran-epub.css'
 cp quran-epub.css "$TMPDIR/"
 sed "s/HURUFQURAN/$HRFQRN/g" "$TMPDIR/quran-epub.css" > "$TMPDIR/quran-epub.tmp" && \
