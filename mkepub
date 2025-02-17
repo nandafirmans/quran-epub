@@ -1,240 +1,321 @@
 #!/bin/bash
 
-#set -euf -o pipefail
+# Initialize default values first
+QURAN='quran-simple-enhanced.txt'
+HRFQRN='_PDMS_Saleem_QuranFont.ttf'
+TRANS=''
+SCRIPTDIR=$(cd "$(dirname "$0")" || exit; pwd)
 
-# Tampilkan pesan dalam huruf tebal dan berwarna merah.
+# Enable strict error handling
+set -euf -o pipefail
+
+# Print functions for consistent output formatting
 print_err() {
   printf '\e[1;31m!! %s\n\e[m' "$*"
 }
 
-# Tampilkan pesan dalam huruf berwarna hijau.
 print_msg() {
   printf '\e[32m:: %s\n\e[m' "$*"
 }
 
-# Tampilkan pesan dalam huruf tebal dan berwarna coklat.
 print_q() {
   printf '\e[1;33m:: %s\n\e[m' "$*"
 }
 
-# Periksa paket-paket yang menjadi ketergantungan skrip.
+# Check for required dependencies
 declare -a DEPS=(awk pandoc)
-for ((NUM=${#DEPS[@]},i=0; i<NUM;i++)); do
-  if command -v "${DEPS[i]}" >/dev/null 2>&1 ; then
-    unset -v 'DEPS[i]'
+MISSING_DEPS=()
+for dep in "${DEPS[@]}"; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    MISSING_DEPS+=("$dep")
   fi
 done
 
-# Hentikan skrip jika paket yeng manjdi ketergantungan tidak ditemukan.
-if [[ "${#DEPS[@]}" -gt 0 ]]; then
+# Stop script if dependencies are missing
+if [[ ${#MISSING_DEPS[@]} -ne 0 ]]; then
   print_err 'Paket tidak ditemukan'
   print_q 'Pasang paket berikut sesuai dengan penata paket yang digunakan:'
-  printf '   - %s\n' "${DEPS[@]}"
+  printf '   - %s\n' "${MISSING_DEPS[@]}"
   exit 1
 fi
 
-# Bantuan penggunaan skrip.
+# Script help function
 print_help() {
-  printf '%s\n' "
-  Skrip ini akan membantu Anda membuat berkas EPUB (buku elektronik) Al Qur'an
-  disertai terjemah bahasa Indonesia.
+  cat << 'EOF'
+  This script helps you create an EPUB (electronic book) version of Al Qur'an
+  with Indonesian translations.
 
-  Berkas teks Al Qur'an dan terjemah diperoleh dari http://tanzil.net.
-  Hal berkaitan dengan tipografi Al Qur'an, terjemah dan atau lainnya yang
-  bukan disebabkan kesalahan skrip ini silakan merujuk ke laman tersebut.
+  The Qur'anic text and translations are obtained from http://tanzil.net.
+  For matters related to Qur'anic typography, translations, or other aspects
+  not caused by this script, please refer to that website.
 
-  Cara menggunakan: ${0##*/} <PILIHAN>
+  Usage: ${0##*/} <OPTIONS>
 
-  PILIHAN:
-    TEKS AL QUR'AN
-    - s, simple               Sederhana
-    - se, simple-enhanced     Sederhana dengan tanda baca dan simbol
-    - sm, simple-minimal      Sederhana dengan sedikit tanda baca dan simbol
-    - sc, simple-clean        Sederhana tanpa tanda baca dan simbol
-    - u, uthmani              Usmani, mushaf Madinah
-    - um, uthmani-minimal     Usmani dengan sedikit tanda baca dan simbol
+  OPTIONS:
+    QUR'ANIC TEXT
+    - s, simple               Simple
+    - se, simple-enhanced     Simple with diacritics and symbols
+    - sm, simple-minimal      Simple with minimal diacritics and symbols
+    - sc, simple-clean        Simple without diacritics and symbols
+    - u, uthmani             Uthmani, Madinah mushaf
+    - um, uthmani-minimal    Uthmani with minimal diacritics and symbols
 
-    Jika tidak ada teks Qur'an yang dipilih maka akan menggunakan teks Qur'an
-    Simple Enhanced.
+    If no Qur'anic text is selected, Simple Enhanced will be used.
 
-    TERJEMAHAN
-    - id, indonesian          Kementerian Agama Republik Indonesia
-    - m, muntakhab            Muhammad Quraish Shihab
-    - j, jalalayn             Tafsir Jalalayn
+    TRANSLATIONS
+    - id, indonesian         Ministry of Religious Affairs of Indonesia
+    - m, muntakhab           Muhammad Quraish Shihab
+    - j, jalalayn           Tafsir Jalalayn
 
-    Jika tidak ada terjemahan yang dipilih maka akan menyertakan ketiga teks
-    terjemahan di atas.
+    If no translation is selected, all three translations above will be included.
 
-    HURUF
-    - me, me_quran            me_quran
-    - pdms                    _PDMS_Saleem_QuranFont
-    - sche, scheherazade      Scheherazade Regular
-    - ut                      KFGQPC Uthman Taha Naskh
+    FONTS
+    - me, me_quran          me_quran
+    - pdms                  _PDMS_Saleem_QuranFont
+    - sche, scheherazade    Scheherazade Regular
+    - ut                    KFGQPC Uthman Taha Naskh
 
-    Jika tiada huruf yang dipilih maka akan digunakan _PDMS_Saleem_QuranFont
-    kecuali untuk teks Qur'an Usmani (uthmani dan uthmani-minimal).
-    Teks Qur'an Usmani akan selalu menggunakan huruf me_quran kecuali
-    ditentukan lain.
+    If no font is selected, _PDMS_Saleem_QuranFont will be used except for
+    Uthmani text (uthmani and uthmani-minimal), which will always use me_quran
+    unless specified otherwise.
 
-    - -h, --help              Tampilkan bantuan ini
-
-  Jika memberikan lebih dari satu kali tiap entri PILIHAN, maka argumen
-  terakhirlah yang akan dipakai. Misal menjalankan perintah:
-
-    ${0##*/} u m sc
-
-  Walau telah memasukkan argumen u untuk mushaf Madinah, namun karena kemudian
-  memberikan juga argumen sc, maka teks Qur'an yang dipakai adalah Simple Clean.
-
-  Contoh penggunaan:
-    - ${0##*/}
-      Membuat EPUB dengan teks Qur'an Simple Enhanced, huruf PDMS dan semua
-      terjemah.
-    - ${0##*/} u
-      Membuat EPUB dengan teks Qur'an Usmani, huruf me_quran dan semua terjemah.
-    - ${0##*/} u id
-      Membuat EPUB dengan teks Qur'an Usmani, huruf me_quran dan terjemah dari
-      Kementerian Agama Republik Indonesia.
-    - ${0##*/} u j ut
-      Membuat EPUB dengan teks Qur'an Usmani, huruf KFGQPC Uthman Taha Naskh
-      dan terjemah tafsir Jalalayn.
-"
+    - -h, --help            Show this help message
+EOF
   exit 0
 }
 
-# Pastikan skrip berjalan pada direktori tempat ia dijalankan.
-SCRIPTDIR=$(cd "$(dirname "$0")" || exit; pwd)
-cd "$SCRIPTDIR" || exit
+# Ensure script runs from its directory
+cd "$SCRIPTDIR" || exit 1
 
-# Array nama-nama surat.
-NAMA_SURAT=( . Al-Fatihah Al-Baqarah Ali-Imran An-Nisaa\' Al-Maaidah \
-  Al-An\'aam Al-A\'raaf Al-Anfaal At-Taubah Yunus Huud Yusuf Ar-Ra\'d Ibrahim \
-  Al-Hijr An-Nahl Al-Israa\' Al-Kahfi Maryam Thaahaa Al-Anbiyaa\' Al-Hajj \
-  Al-Mukminuun An-Nuur Al-Furqaan Ash-Shu\'araa An-Naml Al-Qashash Al-Ankabuut \
-  Ar-Ruum Luqman As-Sajdah Al-Ahzaab Saba\' Faathir Yasiin As-Shaaffaat Shaad \
-  Az-Zumar Al-Ghaafir Fushshilat Asy-Syuura Az-Zukhruf Ad-Dukhaan Al-Jaatsiyah \
-  Al-Ahqaaf Muhammad Al-Fath Al-Hujuraat Qaaf Adz-Dzaariyat Ath-Thur An-Najm \
-  Al-Qamar Ar-Rahmaan Al-Waaqi\'ah Al-Hadiid Al-Mujaadilah Al-Hasyr \
-  Al-Mumtahanah Ash-Shaff Al-Jumu\'ah Al-Munaafiquun At-Taghaabuun Ath-Thaalaq \
-  At-Tahrim Al-Mulk Al-Qalam Al-Haaqqah Al-Ma\'aarij Nuuh Al-Jin Al-Muzzammil \
-  Al-Muddatstsir Al-Qiyaamah Al-Insaan Al-Mursalaat An-Naba\' \
-  An-Naazi\'aat \'Abasa At-Takwir Al-Infithaar Al-Mutaffifin Al-Insyiqaaq \
-  Al-Buruuj Ath-Thaariq Al-A\'laa Al-Ghaashiyah Al-Fajr Al-Balad Asy-Syams \
-  Al-Lail Ad-Dhuhaa 'Alam Nasyrah' At-Tiin Al-\'Alaq Al-Qadr Al-Bayyinah \
-  Al-Zalzalah Al-\'Aadiyaat Al-Qaari\'ah At-Takaatsur Al-\'Ashr Al-Humazah \
-  Al-Fiil Quraisy Al-Maa\'uun Al-Kautsar Al-Kaafiruun An-Nashr Al-Lahab \
-  Al-Ikhlaas Al-Falaq An-Naas )
+# Array of surah names
+NAMA_SURAT=(
+  . Al-Fatihah Al-Baqarah "Ali-'Imran" "An-Nisa'" Al-Ma\'idah \
+  "Al-An'am" "Al-A'raf" Al-Anfal At-Tawbah Yunus Hud Yusuf "Ar-Ra'd" Ibrahim \
+  Al-Hijr An-Nahl "Al-Isra'" Al-Kahf Maryam Ta-Ha "Al-Anbiya'" Al-Hajj \
+  "Al-Mu'minun" An-Nur Al-Furqan "Ash-Shu'ara'" An-Naml Al-Qasas "Al-'Ankabut" \
+  Ar-Rum Luqman As-Sajdah Al-Ahzab "Saba'" Fatir Ya-Sin As-Saffat Sad \
+  Az-Zumar Ghafir Fussilat Ash-Shura Az-Zukhruf Ad-Dukhan Al-Jathiyah \
+  Al-Ahqaf Muhammad Al-Fath Al-Hujurat Qaf Adh-Dhariyat At-Tur An-Najm \
+  Al-Qamar Ar-Rahman "Al-Waqi'ah" Al-Hadid Al-Mujadilah Al-Hashr \
+  Al-Mumtahanah As-Saff "Al-Jumu'ah" Al-Munafiqun At-Taghabun At-Talaq \
+  At-Tahrim Al-Mulk Al-Qalam Al-Haqqah "Al-Ma'arij" Nuh Al-Jinn Al-Muzzammil \
+  Al-Muddaththir Al-Qiyamah Al-Insan Al-Mursalat "An-Naba'" \
+  "An-Nazi'at" "'Abasa" At-Takwir Al-Infitar Al-Mutaffifin Al-Inshiqaq \
+  Al-Buruj At-Tariq "Al-A'la" Al-Ghashiyah Al-Fajr Al-Balad Ash-Shams \
+  Al-Layl Ad-Duha Ash-Sharh At-Tin "Al-'Alaq" Al-Qadr Al-Bayyinah \
+  Az-Zalzalah "Al-'Adiyat" "Al-Qari'ah" At-Takathur "Al-'Asr" Al-Humazah \
+  Al-Fil Quraysh "Al-Ma'un" Al-Kawthar Al-Kafirun An-Nasr Al-Masad \
+  Al-Ikhlas Al-Falaq An-Nas
+)
 
-# Teks qur'an yang akan digunakan
-QURAN='quran-simple-enhanced.txt'
-# Huruf qur'an yang akan digunakan
-HRFQRN='_PDMS_Saleem_QuranFont.ttf'
-
-# Maksimal 3 argumen
+# Maximum 3 arguments
 if [[ "$#" -gt 3 ]]; then
   print_q 'Skrip hanya menerima maksimal 3 argumen:'
   printf '   - %s\n' "1 untuk teks Qur'an" '1 untuk huruf' '1 untuk terjemah'
   print_msg "Ketik $0 -h untuk bantuan lebih lanjut."
-  exit 0
+  exit 1
 fi
 
-# Telusuri argumen dan abaikan urutannya.
-while [[ "$#" -gt 0 ]]; do
+# Process arguments
+while [[ $# -gt 0 ]]; do
   case "$1" in
     s|simple)
       QURAN='quran-simple.txt'
-    ;;
+      ;;
     se|simple-enhanced)
       QURAN='quran-simple-enhanced.txt'
-    ;;
+      ;;
     sm|simple-minimal)
       QURAN='quran-simple-min.txt'
-    ;;
+      ;;
     sc|simple-clean)
       QURAN='quran-simple-clean.txt'
-    ;;
+      ;;
     u|uthmani)
       QURAN='quran-uthmani.txt'
       HRFQRN='me_quran_volt_newmet.ttf'
-    ;;
+      ;;
     um|uthmani-minimal)
       QURAN='quran-uthmani-min.txt'
       HRFQRN='me_quran_volt_newmet.ttf'
-    ;;
+      ;;
     id|indonesian)
       TRANS='id.indonesian.txt'
-    ;;
+      ;;
     m|muntakhab)
       TRANS='id.muntakhab.txt'
-    ;;
+      ;;
     j|jalalayn)
       TRANS='id.jalalayn.txt'
-    ;;
-    me| me_quran)
+      ;;
+    me|me_quran)
       HRFQRN='me_quran_volt_newmet.ttf'
-    ;;
+      ;;
     pdms)
       HRFQRN='_PDMS_Saleem_QuranFont.ttf'
-    ;;
+      ;;
     sche|scheherazade)
       HRFQRN='Scheherazade-Regular.ttf'
-    ;;
+      ;;
     ut)
       HRFQRN='UthmanTN1 Ver10.otf'
-    ;;
-    -h|--help|*)
+      ;;
+    -h|--help)
       print_help
-    ;;
+      ;;
+    *)
+      print_err "Unknown option: $1"
+      print_msg "Type $0 -h for help."
+      exit 1
+      ;;
   esac
   shift
 done
+
+# Check if Qur'an text file exists
+if [[ ! -f "src/quran/$QURAN" ]]; then
+  print_err "File teks Qur'an tidak ditemukan: src/quran/$QURAN"
+  exit 1
+fi
 
 TMPDIR="$(mktemp -d)"
 QMD="$TMPDIR/${QURAN%.*}.md"
 MQ="$TMPDIR/merged-${QURAN}"
 QEPUB="$SCRIPTDIR/quran.epub"
 
-# Jadikan teks Qur'an sebagai header (<h2>) agar ditampilkan tebal dan besar
-# Beri placeholder sementara untuk kemudian diganti tag ##
-awk -F\| '{print $1"|"$2"|HEADERH2"$3}' "src/quran/$QURAN" > "$TMPDIR/$QURAN"
+# Convert Qur'an text to include header markers
+awk -F'|' '{print $1"|"$2"|HEADERH2"$3}' "src/quran/$QURAN" > "$TMPDIR/$QURAN"
 
 print_msg "Menggabungkan teks $QURAN dengan terjemahnya"
-if [[ -z ${TRANS+x} ]]; then
+if [[ -z ${TRANS} ]]; then
   print_msg 'Menyertakan semua terjemahan'
-  # Gabungkan berkas-berkas dengan urutan:
-  # - ayat Al Qur'an:
-  # - terjemah Departemen Agama Republik Indonesia
-  # - terjemah Quraish Shihab
-  # - tafsir Jalalayn
-  paste -d '\n' "$TMPDIR/$QURAN" \
-    "src/translation/id.indonesian.txt" \
+  awk -F'|' '
+    # First pass: read translations
+    FILENAME == "src/translation/id.indonesian.txt" {
+      indo[$1 FS $2] = $3
+      next
+    }
+    FILENAME == "src/translation/id.muntakhab.txt" {
+      munt[$1 FS $2] = $3
+      next
+    }
+    FILENAME == "src/translation/id.jalalayn.txt" {
+      jala[$1 FS $2] = $3
+      next
+    }
+    # Second pass: process Quran text and output with translations
+    FILENAME == ARGV[4] {
+      surah = $1
+      verse = $2
+      text = $3
+      key = surah FS verse
+      
+      # Store verses
+      verses[key] = text
+      
+      # Track surah boundaries
+      if (!(surah in max_verse) || verse > max_verse[surah]) 
+        max_verse[surah] = verse
+    }
+    END {
+      # Process each surah separately
+      for (s = 1; s <= 114; s++) {
+        print "# " s    # Mark start of surah
+        for (v = 1; v <= max_verse[s]; v++) {
+          key = s FS v
+          if (key in verses) {
+            print "## " verses[key]
+            if (key in indo) print indo[key]
+            if (key in munt) print munt[key]
+            if (key in jala) print jala[key]
+            print ""
+          }
+        }
+      }
+    }
+  ' "src/translation/id.indonesian.txt" \
     "src/translation/id.muntakhab.txt" \
-    "src/translation/id.jalalayn.txt" > "$MQ"
+    "src/translation/id.jalalayn.txt" \
+    "$TMPDIR/$QURAN" > "$MQ"
 else
   print_msg "Menggunakan terjemahan $TRANS"
-  paste -d '\n' "$TMPDIR/$QURAN" "src/translation/$TRANS" > "$MQ"
+  awk -F'|' '
+    # First pass: read translation
+    FILENAME == ARGV[1] {
+      trans[$1 FS $2] = $3
+      next
+    }
+    # Second pass: process Quran text and output with translation
+    FILENAME == ARGV[2] {
+      surah = $1
+      verse = $2
+      text = $3
+      key = surah FS verse
+      
+      # Store verses
+      verses[key] = text
+      
+      # Track surah boundaries
+      if (!(surah in max_verse) || verse > max_verse[surah]) 
+        max_verse[surah] = verse
+    }
+    END {
+      # Process each surah separately
+      for (s = 1; s <= 114; s++) {
+        print "# " s    # Mark start of surah
+        for (v = 1; v <= max_verse[s]; v++) {
+          key = s FS v
+          if (key in verses) {
+            print "## " verses[key]
+            if (key in trans) print trans[key]
+            print ""
+          }
+        }
+      }
+    }
+  ' "src/translation/$TRANS" "$TMPDIR/$QURAN" > "$MQ"
 fi
 
-# Escaping backtick so it won't be parsed as code tag
-awk -i inplace '{gsub("`", "\\`")};1' "$MQ"
+print_msg 'Memilah hasil penggabungan berdasar nomor surat'
+# Clear the QMD file first
+> "$QMD"
+
+# Process each surah
+current_surah=0
+while IFS= read -r line; do
+  if [[ $line =~ ^#[^#] ]]; then
+    # This is a surah marker line
+    current_surah=${line#"# "}
+    # Add surah name
+    printf '%s\n\n' "# ${NAMA_SURAT[$current_surah]}" '-----' >> "$QMD"
+    verse_counter=1
+  elif [[ $line =~ ^##[[:space:]] ]]; then
+    # This is a verse line
+    printf '%d. %s\n' "$verse_counter" "$line" >> "$QMD"
+    ((verse_counter++))
+  else
+    # This is a translation or empty line
+    echo "$line" >> "$QMD"
+  fi
+done < "$MQ"
+
+# Escape backticks using sed instead of awk
+sed 's/`/\\`/g' "$MQ" > "$MQ.tmp" && mv "$MQ.tmp" "$MQ"
 
 print_msg 'Memilah hasil penggabungan berdasar nomor surat'
-for i in {1..114} ; do
-  # Beri nama surat
+for i in {1..114}; do
+  # Add surah name
   printf '%s\n\n' "# ${NAMA_SURAT[$i]}" '-----' >> "$QMD"
 
-  # Ambil ayat berdasar nomor
-  # Ganti format nomor x|x| menjadi x.
-  # Tambahkan spasi di bawah baris
-  awk -F\| -v num="^${i}[|][[:alnum:]]" '$0 ~ num {print $2"\\. "$3"\n"}' "$MQ" >> "$QMD"
+  # Extract verses by number and format them
+  awk -F'|' -v num="^${i}[|][[:alnum:]]" \
+    '$0 ~ num {gsub("HEADERH2", "## "); print $2". "$3"\n"}' "$MQ" >> "$QMD"
 done
 
-# Hilangkan angka di depan baris ayat Qur'an agar ia dianggap header <h2>
-awk -i inplace '/HEADERH2/{gsub("^.+HEADERH2", "## ")};1' "$QMD"
-
 print_msg 'Menyalin quran-epub.css'
-cp quran-epub.css "$TMPDIR"
-awk -i inplace -v hrfqrn="$HRFQRN" '{gsub("HURUFQURAN", hrfqrn)};1' "$TMPDIR/quran-epub.css"
+cp quran-epub.css "$TMPDIR/"
+sed "s/HURUFQURAN/$HRFQRN/g" "$TMPDIR/quran-epub.css" > "$TMPDIR/quran-epub.tmp" && \
+  mv "$TMPDIR/quran-epub.tmp" "$TMPDIR/quran-epub.css"
 
 print_msg 'Membuat berkas EPUB'
 pandoc +RTS -K100000000 -RTS \
@@ -249,7 +330,6 @@ pandoc +RTS -K100000000 -RTS \
   "$QMD"
 
 print_msg 'Menghapus map sementara'
-rm -r "$TMPDIR"
+rm -rf "$TMPDIR"
 
 printf '\e[1;32m:: %s\n\e[m' "EPUB Al Qur'an terjemah bahasa Indonesia telah selesai dibuat dan dapat ditemukan di $QEPUB"
-
